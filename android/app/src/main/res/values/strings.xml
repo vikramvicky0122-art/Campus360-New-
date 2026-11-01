@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Campus 360</string>
+    <string name="title_activity_main">Campus 360</string>
+    <string name="package_name">com.campusbazaar.app</string>
+    <string name="custom_url_scheme">com.campusbazaar.app</string>
+</resources>
