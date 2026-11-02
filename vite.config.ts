@@ -1,14 +1,14 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import { defineConfig, Plugin } from 'vite';
+import { defineConfig, loadEnv, Plugin } from 'vite';
 
 // ---------------------------------------------------------------------------
 // Dev-only plugin: handles /api/register in local dev (vite dev server).
 // On Vercel, api/register.js is the serverless function that runs instead.
 // Uses the service role key server-side — never exposed to the browser.
 // ---------------------------------------------------------------------------
-function devRegisterApiPlugin(): Plugin {
+function devRegisterApiPlugin(serviceRoleKey: string, supabaseUrl: string): Plugin {
   return {
     name: 'dev-register-api',
     apply: 'serve', // only active during `vite dev`, not during build
@@ -20,11 +20,17 @@ function devRegisterApiPlugin(): Plugin {
         }
         if (req.method !== 'POST') return next();
 
+        res.setHeader('Content-Type', 'application/json');
+
+        if (!serviceRoleKey || !supabaseUrl) {
+          res.writeHead(500);
+          return res.end(JSON.stringify({ error: 'Server env vars VITE_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured in .env' }));
+        }
+
         // Read body
         let body = '';
         req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
         req.on('end', async () => {
-          res.setHeader('Content-Type', 'application/json');
           try {
             const {
               email, password, fullName, rollNumber,
@@ -40,74 +46,71 @@ function devRegisterApiPlugin(): Plugin {
               return res.end(JSON.stringify({ error: 'Password must be at least 6 characters.' }));
             }
 
-            // Dynamically import @supabase/supabase-js (already in node_modules)
-            const { createClient } = await import('@supabase/supabase-js');
-
-            const supabaseUrl = process.env.VITE_SUPABASE_URL;
-            const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-            if (!supabaseUrl || !serviceKey) {
-              res.writeHead(500);
-              return res.end(JSON.stringify({ error: 'Server env vars not configured.' }));
-            }
-
-            const admin = createClient(supabaseUrl, serviceKey, {
-              auth: { autoRefreshToken: false, persistSession: false },
-            });
-
             const trimmedEmail = email.trim().toLowerCase();
             const cleanRoll = (rollNumber || '').trim().toUpperCase();
+            const authHeaders = {
+              'Content-Type': 'application/json',
+              'apikey': serviceRoleKey,
+              'Authorization': `Bearer ${serviceRoleKey}`,
+            };
 
-            // Check duplicate email
-            const { data: listData } = await admin.auth.admin.listUsers({ perPage: 1000 });
-            const emailExists = listData?.users?.some(
-              (u: any) => u.email?.toLowerCase() === trimmedEmail
+            // Check duplicate email via Supabase Admin REST API
+            const listRes = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=1000`, { headers: authHeaders });
+            if (listRes.ok) {
+              const listData = await listRes.json();
+              const emailExists = (listData.users || []).some(
+                (u: any) => u.email?.toLowerCase() === trimmedEmail
+              );
+              if (emailExists) {
+                res.writeHead(409);
+                return res.end(JSON.stringify({ error: 'This email address is already registered. Please sign in instead.' }));
+              }
+            }
+
+            // Check duplicate roll number via Supabase REST API
+            const profileRes = await fetch(
+              `${supabaseUrl}/rest/v1/profiles?roll_number=eq.${cleanRoll}&institution_id=eq.${institutionId}&select=id`,
+              { headers: { ...authHeaders, 'Prefer': 'return=representation' } }
             );
-            if (emailExists) {
-              res.writeHead(409);
-              return res.end(JSON.stringify({
-                error: 'This email address is already registered. Please sign in instead.',
-              }));
+            if (profileRes.ok) {
+              const profiles = await profileRes.json();
+              if (Array.isArray(profiles) && profiles.length > 0) {
+                res.writeHead(409);
+                return res.end(JSON.stringify({ error: 'This roll number is already registered in your institution.' }));
+              }
             }
 
-            // Check duplicate roll number
-            const { data: existingProfile } = await admin
-              .from('profiles')
-              .select('id')
-              .eq('roll_number', cleanRoll)
-              .eq('institution_id', institutionId)
-              .maybeSingle();
-            if (existingProfile) {
-              res.writeHead(409);
-              return res.end(JSON.stringify({
-                error: 'This roll number is already registered. Please check your details.',
-              }));
-            }
-
-            // Create user — email_confirm:true means NO email is sent at all
-            const { data: authData, error: authError } = await admin.auth.admin.createUser({
-              email: trimmedEmail,
-              password,
-              email_confirm: true,
-              user_metadata: {
-                full_name: fullName,
-                roll_number: cleanRoll,
-                phone: phone || '',
-                department: department || 'General',
-                year_of_study: yearOfStudy || 1,
-                institution_id: institutionId,
-              },
+            // Create user — email_confirm:true → NO email sent at all
+            const createRes = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+              method: 'POST',
+              headers: authHeaders,
+              body: JSON.stringify({
+                email: trimmedEmail,
+                password,
+                email_confirm: true,
+                user_metadata: {
+                  full_name: fullName,
+                  roll_number: cleanRoll,
+                  phone: phone || '',
+                  department: department || 'General',
+                  year_of_study: yearOfStudy || 1,
+                  institution_id: institutionId,
+                },
+              }),
             });
 
-            if (authError) {
+            const createData = await createRes.json();
+            if (!createRes.ok) {
+              const errMsg = createData.message || createData.msg || JSON.stringify(createData);
               res.writeHead(400);
-              return res.end(JSON.stringify({ error: authError.message }));
+              return res.end(JSON.stringify({ error: errMsg }));
             }
 
             res.writeHead(200);
             res.end(JSON.stringify({
               success: true,
               message: 'Registration submitted. Pending campus admin approval.',
-              userId: authData.user.id,
+              userId: createData.id,
             }));
           } catch (err: any) {
             res.writeHead(500);
@@ -119,9 +122,15 @@ function devRegisterApiPlugin(): Plugin {
   };
 }
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  // loadEnv loads ALL keys from .env (empty prefix = no filter)
+  const env = loadEnv(mode, process.cwd(), '');
+
+  const supabaseUrl = env.VITE_SUPABASE_URL || '';
+  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY || '';
+
   return {
-    plugins: [react(), tailwindcss(), devRegisterApiPlugin()],
+    plugins: [react(), tailwindcss(), devRegisterApiPlugin(serviceRoleKey, supabaseUrl)],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

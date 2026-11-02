@@ -1,104 +1,105 @@
 // Vercel Serverless Function: /api/register
-// Runs server-side with SUPABASE_SERVICE_ROLE_KEY so:
-//   1. No email is sent (email_confirm: true) → avoids free-tier email rate limit
-//   2. Service role key never exposed to the browser
-//   3. No CORS issues because same Vercel origin serves the SPA
-
-const { createClient } = require('@supabase/supabase-js');
+// Uses Supabase Admin REST API directly (no SDK dependency issues).
+// email_confirm: true → no email is ever sent → no free-tier rate limit.
 
 module.exports = async function handler(req, res) {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const {
-    email,
-    password,
-    fullName,
-    rollNumber,
-    phone,
-    department,
-    yearOfStudy,
-    institutionId,
-  } = req.body || {};
-
-  // Validation
-  if (!email || !password || !fullName || !rollNumber || !institutionId) {
-    return res.status(400).json({ error: 'Missing required fields.' });
-  }
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
-  }
-
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return res.status(500).json({ error: 'Server configuration error.' });
+    console.error('[register] Missing env vars:', { supabaseUrl: !!supabaseUrl, serviceRoleKey: !!serviceRoleKey });
+    return res.status(500).json({
+      error: 'Server misconfiguration: VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set in Vercel environment variables.',
+    });
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  const { email, password, fullName, rollNumber, phone, department, yearOfStudy, institutionId } = req.body || {};
+
+  if (!email || !password || !fullName || !rollNumber || !institutionId) {
+    return res.status(400).json({ error: 'Missing required fields.' });
+  }
+  if ((password || '').length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  }
 
   const trimmedEmail = email.trim().toLowerCase();
-  const cleanRoll = rollNumber.trim().toUpperCase();
+  const cleanRoll = (rollNumber || '').trim().toUpperCase();
 
-  // Check duplicate email
-  const { data: existingUsers } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-  const emailExists = existingUsers?.users?.some(
-    (u) => u.email?.toLowerCase() === trimmedEmail
-  );
-  if (emailExists) {
-    return res.status(409).json({ error: 'This email address is already registered. Please sign in instead.' });
-  }
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    'apikey': serviceRoleKey,
+    'Authorization': `Bearer ${serviceRoleKey}`,
+  };
 
-  // Check duplicate roll number in this institution
-  const { data: existing } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('roll_number', cleanRoll)
-    .eq('institution_id', institutionId)
-    .maybeSingle();
-  if (existing) {
-    return res.status(409).json({ error: 'This roll number is already registered in your institution.' });
-  }
-
-  // Create user WITHOUT sending any email (email_confirm: true = skip email)
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-    email: trimmedEmail,
-    password,
-    email_confirm: true,
-    user_metadata: {
-      full_name: fullName,
-      roll_number: cleanRoll,
-      phone: phone || '',
-      department: department || 'General',
-      year_of_study: yearOfStudy || 1,
-      institution_id: institutionId,
-    },
-  });
-
-  if (authError) {
-    const msg = authError.message.toLowerCase();
-    if (msg.includes('already registered') || msg.includes('duplicate')) {
-      return res.status(409).json({ error: 'This email is already registered.' });
+  try {
+    // 1. Check if email already exists
+    const listRes = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=1000`, { headers: authHeaders });
+    if (listRes.ok) {
+      const listData = await listRes.json();
+      const emailExists = (listData.users || []).some((u) => u.email?.toLowerCase() === trimmedEmail);
+      if (emailExists) {
+        return res.status(409).json({ error: 'This email address is already registered. Please sign in instead.' });
+      }
     }
-    return res.status(400).json({ error: authError.message });
-  }
 
-  return res.status(200).json({
-    success: true,
-    message: 'Registration submitted. Pending campus admin approval.',
-    userId: authData.user.id,
-  });
+    // 2. Check if roll number exists in this institution
+    const profilesRes = await fetch(
+      `${supabaseUrl}/rest/v1/profiles?roll_number=eq.${encodeURIComponent(cleanRoll)}&institution_id=eq.${encodeURIComponent(institutionId)}&select=id`,
+      { headers: { ...authHeaders, 'Prefer': 'return=representation' } }
+    );
+    if (profilesRes.ok) {
+      const profiles = await profilesRes.json();
+      if (Array.isArray(profiles) && profiles.length > 0) {
+        return res.status(409).json({ error: 'This roll number is already registered in your institution.' });
+      }
+    }
+
+    // 3. Create user without sending any email (email_confirm: true = skip confirmation email)
+    const createRes = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        email: trimmedEmail,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          full_name: fullName,
+          roll_number: cleanRoll,
+          phone: phone || '',
+          department: department || 'General',
+          year_of_study: yearOfStudy || 1,
+          institution_id: institutionId,
+        },
+      }),
+    });
+
+    const createData = await createRes.json();
+
+    if (!createRes.ok) {
+      const errMsg = createData.message || createData.msg || createData.error_description || JSON.stringify(createData);
+      console.error('[register] createUser failed:', createRes.status, errMsg);
+      if (errMsg.toLowerCase().includes('already registered') || errMsg.toLowerCase().includes('duplicate')) {
+        return res.status(409).json({ error: 'This email is already registered. Please sign in instead.' });
+      }
+      return res.status(400).json({ error: errMsg });
+    }
+
+    console.log('[register] User created:', createData.id, trimmedEmail);
+    return res.status(200).json({
+      success: true,
+      message: 'Registration submitted. Pending campus admin approval.',
+      userId: createData.id,
+    });
+
+  } catch (err) {
+    console.error('[register] Unexpected error:', err);
+    return res.status(500).json({ error: err.message || 'Internal server error' });
+  }
 };
