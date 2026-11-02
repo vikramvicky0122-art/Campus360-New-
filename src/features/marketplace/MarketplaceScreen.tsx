@@ -156,7 +156,7 @@ export const MarketplaceScreen: React.FC = () => {
                 >
                   <div className="relative aspect-square w-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                     <img
-                      src={p.images[0]}
+                      src={p.images?.[0] || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600'}
                       alt={p.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />

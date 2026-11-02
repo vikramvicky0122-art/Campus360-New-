@@ -181,7 +181,7 @@ export const HomeScreen: React.FC = () => {
                 >
                   <div className="relative aspect-square w-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                     <img
-                      src={p.images[0]}
+                      src={p.images?.[0] || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600'}
                       alt={p.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
@@ -265,7 +265,7 @@ export const HomeScreen: React.FC = () => {
               className="p-2.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60 active:scale-[0.99] transition cursor-pointer flex items-center gap-3 shadow-xs"
             >
               <img
-                src={p.images[0]}
+                src={p.images?.[0] || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600'}
                 alt={p.title}
                 className="w-16 h-16 rounded-xl object-cover shrink-0 bg-slate-100"
               />

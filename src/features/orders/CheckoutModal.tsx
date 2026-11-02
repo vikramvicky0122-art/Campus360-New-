@@ -147,7 +147,7 @@ export const CheckoutModal: React.FC = () => {
         {/* Product Summary */}
         <div className="mt-4 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-3">
           <img
-            src={checkoutProduct.images[0]}
+            src={checkoutProduct.images?.[0] || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600'}
             alt={checkoutProduct.title}
             className="w-16 h-16 rounded-xl object-cover shrink-0 bg-slate-100"
           />

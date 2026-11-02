@@ -36,6 +36,19 @@ function getLocalFilePath(filename: string): string {
   return path.join(dataDir, filename);
 }
 
+function sanitizeProduct(p: any): Product {
+  return {
+    ...p,
+    images: Array.isArray(p.images) && p.images.length > 0
+      ? p.images
+      : ['https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600'],
+    categoryName: p.categoryName || 'General',
+    condition: p.condition || 'Good',
+    availabilityStatus: p.availabilityStatus || 'AVAILABLE',
+    price: Number(p.price) || 0,
+  };
+}
+
 // ---------------- PRODUCTS ----------------
 export async function loadPersistedProducts(fallbackSeed: Product[]): Promise<Product[]> {
   const supabase = getSupabaseServerClient();
@@ -55,7 +68,7 @@ export async function loadPersistedProducts(fallbackSeed: Product[]): Promise<Pr
               merged.push(seed);
             }
           }
-          return merged;
+          return merged.map(sanitizeProduct);
         }
       }
     } catch (err) {
@@ -70,12 +83,12 @@ export async function loadPersistedProducts(fallbackSeed: Product[]): Promise<Pr
       const raw = fs.readFileSync(localPath, 'utf-8');
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return parsed.map(sanitizeProduct);
       }
     }
   } catch (_) {}
 
-  return fallbackSeed;
+  return fallbackSeed.map(sanitizeProduct);
 }
 
 export async function savePersistedProducts(products: Product[]): Promise<void> {

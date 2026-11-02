@@ -147,12 +147,16 @@ export const ProductDetailsModal: React.FC = () => {
           {/* Image Gallery */}
           <div className="relative aspect-square w-full bg-slate-100 dark:bg-slate-800">
             <img
-              src={selectedProduct.images[activeImageIndex] || selectedProduct.images[0]}
+              src={
+                selectedProduct.images?.[activeImageIndex] ||
+                selectedProduct.images?.[0] ||
+                'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600'
+              }
               alt={selectedProduct.title}
               className="w-full h-full object-cover"
             />
 
-            {selectedProduct.images.length > 1 && (
+            {(selectedProduct.images?.length ?? 0) > 1 && (
               <>
                 <button
                   onClick={() =>

@@ -85,7 +85,7 @@ export const ProductModerationScreen: React.FC = () => {
               className="p-3.5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs flex items-center justify-between gap-3"
             >
               <img
-                src={p.images[0]}
+                src={p.images?.[0] || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600'}
                 alt={p.title}
                 className="w-14 h-14 rounded-2xl object-cover shrink-0 bg-slate-100"
               />
@@ -155,7 +155,7 @@ export const ProductModerationScreen: React.FC = () => {
 
             <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
               <img
-                src={productToDelete.images[0]}
+                src={productToDelete.images?.[0] || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600'}
                 alt={productToDelete.title}
                 className="w-12 h-12 rounded-xl object-cover shrink-0"
               />
