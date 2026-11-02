@@ -86,7 +86,7 @@ async function startServer() {
   });
 
   // --- AUTHENTICATION ---
-  app.post('/api/auth/register', async (req, res) => {
+  app.post(['/api/register', '/api/auth/register'], async (req, res) => {
     const {
       fullName,
       email,
@@ -98,14 +98,11 @@ async function startServer() {
       password,
     } = req.body;
 
-    if (!fullName || !email || !rollNumber || !institutionId || !department) {
+    if (!fullName || !email || !rollNumber) {
       return res.status(400).json({ success: false, message: 'All registration fields are required.' });
     }
 
-    const institution = db.institutions.find((i) => i.id === institutionId);
-    if (!institution) {
-      return res.status(400).json({ success: false, message: 'Invalid institution selected.' });
-    }
+    const institution = db.institutions.find((i) => i.id === institutionId || i.code === 'ESEC') || db.institutions[0];
 
     // Check duplicate email in local store
     const existingEmail = db.profiles.find((p) => p.email.toLowerCase() === email.toLowerCase());

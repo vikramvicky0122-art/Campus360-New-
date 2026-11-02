@@ -229,14 +229,14 @@ class ApiService {
     try {
       result = await response.json();
     } catch {
-      throw new Error('Invalid response from registration service. Please try again.');
+      throw new Error('Registration service returned an invalid response. Please try again.');
     }
 
     if (!response.ok) {
-      throw new Error(result?.error || `Registration failed (${response.status})`);
+      throw new Error(result?.error || result?.message || `Registration failed (${response.status})`);
     }
 
-    const userId = result.userId;
+    const userId = result?.userId || result?.profile?.id || `user-${Date.now()}`;
 
     const newProfile: Profile = {
       id: userId,
