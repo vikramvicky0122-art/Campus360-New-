@@ -1613,7 +1613,8 @@ export function createApp(): express.Express {
   app.put('/api/admin/orders/:id/review', requireAdmin, handleAdminOrderReview);
 
   // --- PART 2 & 3: REPORT RENTAL AMOUNT PAYMENT (STAGE 3) ---
-  app.post('/api/orders/:id/report-rental-payment', (req, res) => {
+  const handleReportRentalPayment = async (req: express.Request, res: express.Response) => {
+    db.orders = await loadPersistedOrders(db.orders);
     const user = getUserFromRequest(req);
     if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
@@ -1669,8 +1670,13 @@ export function createApp(): express.Express {
       notes: `Rental amount of ₹${order.rentalAmount} reported via ${paymentMethod} (Ref: ${order.rentalPaymentReference}). Rental is now ACTIVE.`,
     });
 
+    await savePersistedOrders(db.orders);
     res.json({ success: true, message: 'Rental payment recorded. Rental is now ACTIVE.', order });
-  });
+  };
+  app.post('/api/orders/:id/rental-payment', handleReportRentalPayment);
+  app.put('/api/orders/:id/rental-payment', handleReportRentalPayment);
+  app.post('/api/orders/:id/report-rental-payment', handleReportRentalPayment);
+  app.put('/api/orders/:id/report-rental-payment', handleReportRentalPayment);
 
   // --- PART 3: LIFECYCLE COMPLETION STEPPER (SELLER REQUEST -> BUYER CONFIRM) ---
   const handleRequestCompletion = async (req: express.Request, res: express.Response) => {
@@ -1772,7 +1778,8 @@ export function createApp(): express.Express {
   app.post('/api/orders/:id/confirm-completion', handleConfirmCompletion);
   app.put('/api/orders/:id/confirm-completion', handleConfirmCompletion);
 
-  app.put('/api/admin/orders/:id/resolve-dispute', requireAdmin, (req, res) => {
+  const handleResolveDispute = async (req: express.Request, res: express.Response) => {
+    db.orders = await loadPersistedOrders(db.orders);
     const admin = getUserFromRequest(req);
     const { status, resolutionNotes } = req.body;
 
@@ -1800,10 +1807,15 @@ export function createApp(): express.Express {
       notes: `Admin dispute resolution: ${resolutionNotes}`,
     });
 
+    await savePersistedOrders(db.orders);
+    await savePersistedProducts(db.products);
     res.json({ success: true, message: `Dispute resolved to ${status}`, order });
-  });
+  };
+  app.post('/api/admin/orders/:id/resolve-dispute', requireAdmin, handleResolveDispute);
+  app.put('/api/admin/orders/:id/resolve-dispute', requireAdmin, handleResolveDispute);
 
-  app.get('/api/orders/:id/history', (req, res) => {
+  app.get('/api/orders/:id/history', async (req, res) => {
+    db.orders = await loadPersistedOrders(db.orders);
     const user = getUserFromRequest(req);
     if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
