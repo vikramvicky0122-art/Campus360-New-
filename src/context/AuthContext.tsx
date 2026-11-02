@@ -98,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const res = await api.getMe();
       if (res.success && res.profile) {
+        api.setUserProfile(res.profile);
         setUser(res.profile);
         const verifRes = await api.getVerificationStatus();
         if (verifRes.success) {
@@ -135,7 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       const res = await api.login(email, password);
       if (res.success && res.profile) {
-        api.setUserId(res.profile.id);
+        api.setUserProfile(res.profile);
         setUser(res.profile);
         setIsLoginScreenOpen(false);
         await refreshUser();
@@ -178,7 +179,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const switchUser = async (userId: string) => {
     setIsLoading(true);
-    api.setUserId(userId);
+    const demo = DEMO_USERS.find(u => u.id === userId);
+    if (demo) {
+      api.setUserProfile({
+        id: demo.id,
+        fullName: demo.name,
+        email: demo.email,
+        rollNumber: demo.roll,
+        role: demo.role,
+        isVerified: demo.status === 'VERIFIED',
+      });
+    } else {
+      api.setUserId(userId);
+    }
     setIsLoginScreenOpen(false);
     await refreshUser();
   };

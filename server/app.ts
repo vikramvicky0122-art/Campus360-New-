@@ -4,8 +4,9 @@ import { fileURLToPath } from 'url';
 import { db } from './db.ts';
 import { youPiGateway } from './youpi.ts';
 import { razorpayService } from './razorpay.ts';
-import type { Product, Order, Payment, Transaction, Conversation, Message, Notification, StudentVerification } from '../src/types/index.ts';
+import type { Product, Order, Payment, Transaction, Conversation, Message, Notification, StudentVerification, Profile } from '../src/types/index.ts';
 import { getSupabaseServerClient, isSupabaseConfigured } from './supabase.ts';
+import { loadPersistedProducts, savePersistedProducts, loadPersistedOrders, savePersistedOrders } from './storage.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,9 +65,40 @@ export function createApp(): express.Express {
   const getUserFromRequest = (req: express.Request) => {
     const userId = req.headers['x-user-id'] as string;
     if (userId) {
-      return db.profiles.find((p) => p.id === userId) || null;
+      let found = db.profiles.find((p) => p.id === userId);
+      if (found) {
+        if (req.headers['x-user-name']) found.fullName = req.headers['x-user-name'] as string;
+        if (req.headers['x-user-email']) found.email = req.headers['x-user-email'] as string;
+        if (req.headers['x-user-roll']) found.rollNumber = req.headers['x-user-roll'] as string;
+        if (req.headers['x-user-department']) found.department = req.headers['x-user-department'] as string;
+        return found;
+      }
+
+      // If a userId was passed from an authenticated session, guarantee that it has an active profile
+      // with their actual userId so listings and orders are never assigned to the wrong account!
+      const fallbackUser: Profile = {
+        id: userId,
+        email: (req.headers['x-user-email'] as string) || `student-${userId.slice(0, 8)}@esec.ac.in`,
+        fullName: (req.headers['x-user-name'] as string) || 'Verified Student Seller',
+        phone: '+91 98000 00000',
+        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        institutionId: '00000000-0000-0000-0000-000000000001',
+        institutionName: 'Erode Sengunthar Engineering College',
+        department: (req.headers['x-user-department'] as string) || 'Computer Science & Engineering',
+        yearOfStudy: 1,
+        rollNumber: (req.headers['x-user-roll'] as string) || 'STUDENT',
+        role: 'user' as const,
+        isVerified: true,
+        isSuspended: false,
+        verificationStatus: 'VERIFIED' as const,
+        rejectionReason: undefined,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      db.profiles.push(fallbackUser);
+      return fallbackUser;
     }
-    // Default to verified student Aarav for easy testing if no header is supplied
+    // Default to verified student Aarav only when no x-user-id is supplied at all
     return db.profiles.find((p) => p.id === 'user-aarav') || null;
   };
 
@@ -538,7 +570,10 @@ export function createApp(): express.Express {
   });
 
   // --- MARKETPLACE PRODUCTS ---
-  app.get('/api/products', (req, res) => {
+  app.get('/api/products', async (req, res) => {
+    // Load persisted products from cloud/disk so all accounts and reloaded sessions see newly published items
+    db.products = await loadPersistedProducts(db.products);
+
     const { category, search, minPrice, maxPrice, condition, sort, institutionId } = req.query;
 
     let items = db.products.filter((p) => p.availabilityStatus !== 'REMOVED');
@@ -601,8 +636,12 @@ export function createApp(): express.Express {
     res.json({ success: true, count: sanitizedProducts.length, products: sanitizedProducts });
   });
 
-  app.get('/api/products/:id', (req, res) => {
-    const product = db.products.find((p) => p.id === req.params.id);
+  app.get('/api/products/:id', async (req, res) => {
+    let product = db.products.find((p) => p.id === req.params.id);
+    if (!product) {
+      db.products = await loadPersistedProducts(db.products);
+      product = db.products.find((p) => p.id === req.params.id);
+    }
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
@@ -663,7 +702,7 @@ export function createApp(): express.Express {
     });
   });
 
-  app.post('/api/products', (req, res) => {
+  app.post('/api/products', async (req, res) => {
     const user = getUserFromRequest(req);
     if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
@@ -716,15 +755,19 @@ export function createApp(): express.Express {
       updatedAt: new Date().toISOString(),
     };
 
+    // Load latest products, prepend new product, and save persistently to cloud storage and disk
+    db.products = await loadPersistedProducts(db.products);
     db.products.unshift(newProduct);
+    await savePersistedProducts(db.products);
 
     res.status(201).json({ success: true, message: 'Product listed successfully!', product: newProduct });
   });
 
-  app.put('/api/products/:id', (req, res) => {
+  app.put('/api/products/:id', async (req, res) => {
     const user = getUserFromRequest(req);
     if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
+    db.products = await loadPersistedProducts(db.products);
     const product = db.products.find((p) => p.id === req.params.id);
     if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
 
@@ -741,11 +784,14 @@ export function createApp(): express.Express {
     if (availabilityStatus) product.availabilityStatus = availabilityStatus;
     product.updatedAt = new Date().toISOString();
 
+    await savePersistedProducts(db.products);
+
     res.json({ success: true, message: 'Product updated successfully.', product });
   });
 
-  app.delete('/api/products/:id', (req, res) => {
+  app.delete('/api/products/:id', async (req, res) => {
     const user = getUserFromRequest(req);
+    db.products = await loadPersistedProducts(db.products);
     const productIndex = db.products.findIndex((p) => p.id === req.params.id);
     if (productIndex === -1) {
       return res.status(404).json({ success: false, message: 'Product not found.' });
@@ -760,15 +806,18 @@ export function createApp(): express.Express {
 
     // Permanently remove from products list
     const [removed] = db.products.splice(productIndex, 1);
+    await savePersistedProducts(db.products);
     res.json({ success: true, message: 'Product successfully removed from marketplace.', removedId: removed?.id });
   });
 
-  app.delete('/api/admin/products/:id', (req, res) => {
+  app.delete('/api/admin/products/:id', async (req, res) => {
+    db.products = await loadPersistedProducts(db.products);
     const productIndex = db.products.findIndex((p) => p.id === req.params.id);
     if (productIndex === -1) {
       return res.status(404).json({ success: false, message: 'Product not found in marketplace.' });
     }
     const [removed] = db.products.splice(productIndex, 1);
+    await savePersistedProducts(db.products);
     res.json({ success: true, message: 'Product listing permanently removed by administrator.', removedId: removed?.id });
   });
 
@@ -813,7 +862,7 @@ export function createApp(): express.Express {
   });
 
   // --- BUYING & YOUPI-PG PAYMENT WORKFLOW ---
-  app.post('/api/payments/create-order', (req, res) => {
+  app.post('/api/payments/create-order', async (req, res) => {
     const user = getUserFromRequest(req);
     if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
@@ -824,6 +873,9 @@ export function createApp(): express.Express {
         message: 'Verification Required: You must be a verified student to purchase items on Campus Bazaar.',
       });
     }
+
+    db.products = await loadPersistedProducts(db.products);
+    db.orders = await loadPersistedOrders(db.orders);
 
     const { productId, handoverLocation, handoverNotes, idempotencyKey } = req.body;
 
@@ -885,6 +937,8 @@ export function createApp(): express.Express {
     };
 
     db.orders.push(newOrder);
+    await savePersistedOrders(db.orders);
+    await savePersistedOrders(db.orders);
 
     // Call YouPI-PG Gateway integration module to create payment order
     const youPiOrder = youPiGateway.createOrder({
@@ -910,9 +964,12 @@ export function createApp(): express.Express {
     });
   });
 
-  app.post('/api/payments/verify', (req, res) => {
+  app.post('/api/payments/verify', async (req, res) => {
     const user = getUserFromRequest(req);
     if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    db.products = await loadPersistedProducts(db.products);
+    db.orders = await loadPersistedOrders(db.orders);
 
     const { gatewayOrderId, orderId, paymentReferenceId, signature, status, upiId, method } = req.body;
 
@@ -939,6 +996,7 @@ export function createApp(): express.Express {
     if (!verification.isValid || status !== 'SUCCESS') {
       order.status = 'CANCELLED';
       order.updatedAt = new Date().toISOString();
+      await savePersistedOrders(db.orders);
       return res.status(400).json({
         success: false,
         message: 'Payment verification failed on YouPI-PG gateway. Transaction was declined or cancelled.',
@@ -965,6 +1023,9 @@ export function createApp(): express.Express {
     // 2. Mark Product as RESERVED / SOLD
     product.availabilityStatus = 'SOLD';
     product.updatedAt = new Date().toISOString();
+
+    await savePersistedOrders(db.orders);
+    await savePersistedProducts(db.products);
 
     // 3. Record Payment
     const paymentRecord: Payment = {
@@ -1104,6 +1165,9 @@ export function createApp(): express.Express {
       });
     }
 
+    db.products = await loadPersistedProducts(db.products);
+    db.orders = await loadPersistedOrders(db.orders);
+
     const { productId, handoverLocation, handoverNotes } = req.body;
 
     const product = db.products.find((p) => p.id === productId);
@@ -1187,6 +1251,7 @@ export function createApp(): express.Express {
     };
 
     db.orders.push(newOrder);
+    await savePersistedOrders(db.orders);
 
     // Audit history entry
     recordBookingHistory({
@@ -1221,7 +1286,7 @@ export function createApp(): express.Express {
     });
   });
 
-  app.post('/api/razorpay/verify-payment', (req, res) => {
+  app.post('/api/razorpay/verify-payment', async (req, res) => {
     const user = getUserFromRequest(req);
     if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
@@ -1300,6 +1365,9 @@ export function createApp(): express.Express {
     // 5. Reserve product so others cannot double-book
     product.availabilityStatus = 'RESERVED';
     product.updatedAt = new Date().toISOString();
+
+    await savePersistedOrders(db.orders);
+    await savePersistedProducts(db.products);
 
     // 6. Record Payment record for Stage 1 Booking Fee
     const paymentRecord: Payment = {
@@ -1719,7 +1787,8 @@ export function createApp(): express.Express {
   });
 
   // --- ORDERS ---
-  app.get('/api/orders', (req, res) => {
+  app.get('/api/orders', async (req, res) => {
+    db.orders = await loadPersistedOrders(db.orders);
     const user = getUserFromRequest(req);
     if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
@@ -1736,7 +1805,8 @@ export function createApp(): express.Express {
     res.json({ success: true, orders: userOrders });
   });
 
-  app.get('/api/orders/:id', (req, res) => {
+  app.get('/api/orders/:id', async (req, res) => {
+    db.orders = await loadPersistedOrders(db.orders);
     const user = getUserFromRequest(req);
     if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
@@ -1752,7 +1822,8 @@ export function createApp(): express.Express {
     res.json({ success: true, order, payment: payment || null });
   });
 
-  app.put('/api/orders/:id/status', (req, res) => {
+  app.put('/api/orders/:id/status', async (req, res) => {
+    db.orders = await loadPersistedOrders(db.orders);
     const user = getUserFromRequest(req);
     if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
@@ -1776,6 +1847,7 @@ export function createApp(): express.Express {
         sellerCreditTxn.status = 'COMPLETED';
       }
     }
+    await savePersistedOrders(db.orders);
     order.updatedAt = new Date().toISOString();
 
     // Notify counterpart

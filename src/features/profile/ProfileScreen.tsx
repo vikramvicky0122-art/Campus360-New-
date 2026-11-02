@@ -26,6 +26,7 @@ export const ProfileScreen: React.FC = () => {
     openVerificationModal,
     openExpoViewer,
     openAddProduct,
+    openProductDetails,
   } = useMarketplace();
 
   if (!user) return null;
@@ -143,6 +144,55 @@ export const ProfileScreen: React.FC = () => {
           <div className="text-[10px] text-slate-500 font-medium">Favourites</div>
         </div>
       </div>
+
+      {/* My Active Listings Section */}
+      {myListings.length > 0 && (
+        <div className="px-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+              My Posted Listings ({myListings.length})
+            </h3>
+          </div>
+          <div className="space-y-2">
+            {myListings.map((p) => (
+              <div
+                key={p.id}
+                onClick={() => openProductDetails(p)}
+                className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <img
+                    src={p.images[0] || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100'}
+                    alt={p.title}
+                    className="w-12 h-12 rounded-xl object-cover shrink-0 border border-slate-100 dark:border-slate-800"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                      {p.title}
+                    </div>
+                    <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                      ₹{p.price}
+                    </div>
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <span
+                    className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      p.availabilityStatus === 'AVAILABLE'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
+                        : p.availabilityStatus === 'RESERVED'
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                    }`}
+                  >
+                    {p.availabilityStatus}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Menu Options */}
       <div className="px-4 space-y-1.5">

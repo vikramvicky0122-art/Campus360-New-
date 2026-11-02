@@ -107,13 +107,37 @@ class ApiService {
     return this.currentUserId;
   }
 
+  public setUserProfile(profile: Partial<Profile>) {
+    if (typeof window !== 'undefined' && profile) {
+      if (profile.id) {
+        this.setUserId(profile.id);
+      }
+      localStorage.setItem('campus_bazaar_user_profile', JSON.stringify(profile));
+    }
+  }
+
+  public getUserProfile(): Partial<Profile> | null {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('campus_bazaar_user_profile');
+        if (raw) return JSON.parse(raw);
+      } catch (_) {}
+    }
+    return null;
+  }
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const isAbsolute = endpoint.startsWith('http://') || endpoint.startsWith('https://');
     const url = isAbsolute ? endpoint : `${this.apiBaseUrl}${endpoint}`;
 
+    const userProfile = this.getUserProfile();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'x-user-id': this.getUserId(),
+      ...(userProfile?.fullName ? { 'x-user-name': userProfile.fullName } : {}),
+      ...(userProfile?.email ? { 'x-user-email': userProfile.email } : {}),
+      ...(userProfile?.rollNumber ? { 'x-user-roll': userProfile.rollNumber } : {}),
+      ...(userProfile?.department ? { 'x-user-department': userProfile.department } : {}),
       ...(options.headers as Record<string, string>),
     };
 
@@ -348,15 +372,20 @@ class ApiService {
         };
 
         this.setUserId(profile.id);
+        this.setUserProfile(profile);
         return { success: true, profile };
       }
     }
 
     // 2. Fallback to backend API
-    return this.request('/api/auth/login', {
+    const res = await this.request<{ success: boolean; profile: Profile }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email: trimmedEmail, password }),
     });
+    if (res?.success && res?.profile) {
+      this.setUserProfile(res.profile);
+    }
+    return res;
   }
 
   async logout(): Promise<void> {
@@ -369,6 +398,7 @@ class ApiService {
     }
     if (typeof window !== 'undefined') {
       localStorage.removeItem('campus_bazaar_user_id');
+      localStorage.removeItem('campus_bazaar_user_profile');
     }
     this.currentUserId = '';
   }
@@ -431,6 +461,7 @@ class ApiService {
               updatedAt: sbProfile.updated_at || new Date().toISOString(),
             };
             this.setUserId(profile.id);
+            this.setUserProfile(profile);
             return { success: true, profile };
           }
         }
@@ -439,7 +470,11 @@ class ApiService {
       }
     }
 
-    return this.request('/api/auth/me');
+    const res = await this.request<{ success: boolean; profile: Profile }>('/api/auth/me');
+    if (res?.success && res?.profile) {
+      this.setUserProfile(res.profile);
+    }
+    return res;
   }
 
   // --- VERIFICATION ---
