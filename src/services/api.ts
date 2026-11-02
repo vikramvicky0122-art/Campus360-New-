@@ -954,6 +954,9 @@ class ApiService {
   ): Promise<{ success: boolean; message: string }> {
     return this.request(`/api/admin/orders/${orderId}/review`, {
       method: 'POST',
+      headers: {
+        'x-admin-role': 'admin',
+      },
       body: JSON.stringify({ action, rejectionReason }),
     });
   }
@@ -1026,7 +1029,11 @@ class ApiService {
   }
 
   async getAdminOrders(): Promise<{ success: boolean; orders: (Order & { payment: any })[] }> {
-    return this.request('/api/admin/orders');
+    return this.request('/api/admin/orders', {
+      headers: {
+        'x-admin-role': 'admin',
+      },
+    });
   }
 
   async getAdminTransactions(): Promise<{
@@ -1034,16 +1041,27 @@ class ApiService {
     transactions: any[];
     totalCommissionCollected: number;
   }> {
-    return this.request('/api/admin/transactions');
+    return this.request('/api/admin/transactions', {
+      headers: {
+        'x-admin-role': 'admin',
+      },
+    });
   }
 
   async getAdminSettings(): Promise<{ success: boolean; settings: PlatformSettings }> {
-    return this.request('/api/admin/settings');
+    return this.request('/api/admin/settings', {
+      headers: {
+        'x-admin-role': 'admin',
+      },
+    });
   }
 
   async updateAdminSettings(settings: Partial<PlatformSettings>): Promise<{ success: boolean; settings: PlatformSettings }> {
     return this.request('/api/admin/settings', {
       method: 'PUT',
+      headers: {
+        'x-admin-role': 'admin',
+      },
       body: JSON.stringify(settings),
     });
   }

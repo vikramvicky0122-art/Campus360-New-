@@ -125,7 +125,14 @@ export async function loadPersistedOrders(fallbackSeed: Order[]): Promise<Order[
         const text = await data.text();
         const parsed = JSON.parse(text);
         if (Array.isArray(parsed)) {
-          return parsed;
+          const existingIds = new Set(parsed.map((o: Order) => o.id));
+          const merged = [...parsed];
+          for (const seed of fallbackSeed) {
+            if (!existingIds.has(seed.id)) {
+              merged.push(seed);
+            }
+          }
+          return merged;
         }
       }
     } catch (err) {
@@ -139,7 +146,14 @@ export async function loadPersistedOrders(fallbackSeed: Order[]): Promise<Order[
       const raw = fs.readFileSync(localPath, 'utf-8');
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed;
+        const existingIds = new Set(parsed.map((o: Order) => o.id));
+        const merged = [...parsed];
+        for (const seed of fallbackSeed) {
+          if (!existingIds.has(seed.id)) {
+            merged.push(seed);
+          }
+        }
+        return merged;
       }
     }
   } catch (_) {}
