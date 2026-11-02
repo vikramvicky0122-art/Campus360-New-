@@ -200,11 +200,11 @@ class ApiService {
       throw new Error('Password must be at least 6 characters long.');
     }
 
-    // Call the Vercel serverless API route /api/register.
-    // It runs server-side with SUPABASE_SERVICE_ROLE_KEY, so:
-    //   • No email is sent → no free-tier email rate limit (500 errors)
-    //   • Service role key is never exposed to the browser
-    //   • Same-origin request → no CORS issues
+    // POST to /api/register — handled by:
+    //   • Local dev:  vite.config.ts devRegisterApiPlugin() middleware (no email sent)
+    //   • Vercel:     api/register.js serverless function (no email sent)
+    // Both paths use the service role key server-side.
+    // No email confirmation → no free-tier email rate limit errors.
     let response: Response;
     try {
       response = await fetch('/api/register', {
@@ -222,35 +222,14 @@ class ApiService {
         }),
       });
     } catch (netErr: any) {
-      // /api/register not available (e.g. local dev without Vercel CLI).
-      // Fall back to supabase.auth.signUp() directly.
-      return this._registerDirectSupabase(
-        trimmedEmail,
-        params.password,
-        params.fullName,
-        cleanRollNumber,
-        params.phone || '',
-        params.department,
-        params.yearOfStudy,
-        params.institutionId || DEFAULT_INSTITUTION.id
-      );
+      throw new Error(`Cannot reach registration service: ${netErr.message}`);
     }
 
-    // If the server returned a non-JSON or non-2xx body, fall back to direct Supabase
     let result: any;
     try {
       result = await response.json();
     } catch {
-      return this._registerDirectSupabase(
-        trimmedEmail,
-        params.password,
-        params.fullName,
-        cleanRollNumber,
-        params.phone || '',
-        params.department,
-        params.yearOfStudy,
-        params.institutionId || DEFAULT_INSTITUTION.id
-      );
+      throw new Error('Invalid response from registration service. Please try again.');
     }
 
     if (!response.ok) {
@@ -282,79 +261,6 @@ class ApiService {
       success: true,
       message: 'Registration Submitted! Pending Campus Admin Approval.',
       profile: newProfile,
-    };
-  }
-
-  // Fallback: used locally (without Vercel CLI) or when /api/register is unavailable.
-  // In production this path is never reached because /api/register handles it.
-  private async _registerDirectSupabase(
-    email: string,
-    password: string,
-    fullName: string,
-    rollNumber: string,
-    phone: string,
-    department: string,
-    yearOfStudy: number,
-    institutionId: string
-  ): Promise<{ success: boolean; message: string; profile: Profile }> {
-    if (!supabase) throw new Error('Supabase not configured.');
-
-    const { data: authData, error: authErr } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-          roll_number: rollNumber,
-          phone,
-          department,
-          year_of_study: yearOfStudy,
-          institution_id: institutionId,
-        },
-      },
-    });
-
-    if (authErr) {
-      const msg = authErr.message.toLowerCase();
-      if (msg.includes('rate limit') || msg.includes('email rate')) {
-        throw new Error('Registration temporarily unavailable (email rate limit). Please try again in a few minutes.');
-      }
-      if (
-        msg.includes('already registered') ||
-        msg.includes('database error') ||
-        msg.includes('duplicate')
-      ) {
-        throw new Error('This email or roll number is already registered. Please sign in instead.');
-      }
-      throw new Error(authErr.message);
-    }
-
-    if (!authData?.user) throw new Error('Registration failed: no user returned.');
-    if (authData.user.identities?.length === 0) {
-      throw new Error('This email address is already registered. Please sign in instead.');
-    }
-
-    return {
-      success: true,
-      message: 'Registration Submitted! Pending Campus Admin Approval.',
-      profile: {
-        id: authData.user.id,
-        email,
-        fullName,
-        phone,
-        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-        institutionId,
-        institutionName: DEFAULT_INSTITUTION.name,
-        department,
-        yearOfStudy,
-        rollNumber,
-        role: 'user',
-        isVerified: false,
-        isSuspended: false,
-        verificationStatus: 'PENDING',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
     };
   }
 
