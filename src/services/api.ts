@@ -4,6 +4,7 @@ import {
   Category,
   Product,
   Order,
+  OrderStatus,
   Conversation,
   Message,
   Notification,
@@ -28,6 +29,7 @@ const DEFAULT_INSTITUTION: Institution = {
   domain: 'esec.ac.in',
   address: 'Thudupathi, Perundurai, Erode, Tamil Nadu 638057',
   isActive: true,
+  createdAt: '2026-11-01T00:00:00Z',
 };
 
 const DEFAULT_CATEGORIES: Category[] = [
@@ -82,7 +84,7 @@ const DEFAULT_CATEGORIES: Category[] = [
 ];
 
 class ApiService {
-  private currentUserId: string = 'user-aarav';
+  private currentUserId: string = '';
   private apiBaseUrl: string = (
     import.meta.env.VITE_API_BASE_URL ||
     import.meta.env.VITE_API_URL ||
@@ -152,11 +154,30 @@ class ApiService {
 
   // --- INSTITUTIONS ---
   async getInstitutions(): Promise<{ institutions: Institution[] }> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data, error } = await supabase.from('institutions').select('*');
+        if (!error && data && data.length > 0) {
+          const institutions: Institution[] = data.map((i: any) => ({
+            id: i.id,
+            name: i.name,
+            code: i.code,
+            domain: i.domain,
+            address: i.address || DEFAULT_INSTITUTION.address,
+            isActive: i.is_active ?? true,
+            createdAt: i.created_at || DEFAULT_INSTITUTION.createdAt,
+          }));
+          return { institutions };
+        }
+      } catch {
+        // Fall through
+      }
+    }
     try {
       const res = await this.request<{ success: boolean; institutions: Institution[] }>('/api/institutions');
       if (res?.institutions?.length) return res;
     } catch {
-      // Graceful fallback for mobile APK without local server
+      // Graceful fallback
     }
     return { institutions: [DEFAULT_INSTITUTION] };
   }
@@ -173,87 +194,171 @@ class ApiService {
     password?: string;
   }): Promise<{ success: boolean; message: string; profile: Profile }> {
     const trimmedEmail = params.email.trim().toLowerCase();
+    const cleanRollNumber = params.rollNumber.trim().toUpperCase();
 
-    // 1. Direct Supabase Auth for mobile & production
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data: authData, error: authErr } = await supabase.auth.signUp({
-          email: trimmedEmail,
-          password: params.password || 'Campus360#DefaultPassword',
-          options: {
-            data: {
-              full_name: params.fullName,
-              roll_number: params.rollNumber.toUpperCase(),
-              phone: params.phone || '',
-              department: params.department,
-              year_of_study: params.yearOfStudy,
-            },
-          },
-        });
-
-        if (authErr) {
-          if (authErr.message.toLowerCase().includes('already registered')) {
-            throw new Error('An account with this email already exists.');
-          }
-          throw new Error(authErr.message);
-        }
-
-        const userId = authData.user?.id || `user-${Date.now()}`;
-
-        // Upsert profile in Supabase profiles table
-        await supabase.from('profiles').upsert({
-          id: userId,
-          email: trimmedEmail,
-          full_name: params.fullName,
-          phone: params.phone,
-          institution_id: params.institutionId || DEFAULT_INSTITUTION.id,
-          department: params.department,
-          year_of_study: params.yearOfStudy,
-          roll_number: params.rollNumber.toUpperCase(),
-          role: 'user',
-          is_verified: false,
-          verification_status: 'PENDING',
-          updated_at: new Date().toISOString(),
-        });
-
-        const newProfile: Profile = {
-          id: userId,
-          email: trimmedEmail,
-          fullName: params.fullName,
-          phone: params.phone,
-          avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-          institutionId: params.institutionId || DEFAULT_INSTITUTION.id,
-          institutionName: DEFAULT_INSTITUTION.name,
-          department: params.department,
-          yearOfStudy: params.yearOfStudy,
-          rollNumber: params.rollNumber.toUpperCase(),
-          role: 'user',
-          isVerified: false,
-          isSuspended: false,
-          verificationStatus: 'PENDING',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        this.setUserId(userId);
-        return {
-          success: true,
-          message: 'Student account registered successfully. Verification is pending campus admin approval.',
-          profile: newProfile,
-        };
-      } catch (err: any) {
-        if (
-          err.message.includes('already exists') ||
-          err.message.includes('password') ||
-          err.message.includes('rate limit')
-        ) {
-          throw err;
-        }
-        console.warn('[Supabase Auth] Fallback to backend API register:', err.message);
-      }
+    if (!params.password || params.password.length < 6) {
+      throw new Error('Password must be at least 6 characters long.');
     }
 
-    // 2. Fallback to backend server if reachable
+    // Call the Vercel serverless API route /api/register.
+    // It runs server-side with SUPABASE_SERVICE_ROLE_KEY, so:
+    //   • No email is sent → no free-tier email rate limit (500 errors)
+    //   • Service role key is never exposed to the browser
+    //   • Same-origin request → no CORS issues
+    let response: Response;
+    try {
+      response = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: trimmedEmail,
+          password: params.password,
+          fullName: params.fullName,
+          rollNumber: cleanRollNumber,
+          phone: params.phone || '',
+          department: params.department,
+          yearOfStudy: params.yearOfStudy,
+          institutionId: params.institutionId || DEFAULT_INSTITUTION.id,
+        }),
+      });
+    } catch (netErr: any) {
+      // /api/register not available (e.g. local dev without Vercel CLI).
+      // Fall back to supabase.auth.signUp() directly.
+      return this._registerDirectSupabase(
+        trimmedEmail,
+        params.password,
+        params.fullName,
+        cleanRollNumber,
+        params.phone || '',
+        params.department,
+        params.yearOfStudy,
+        params.institutionId || DEFAULT_INSTITUTION.id
+      );
+    }
+
+    // If the server returned a non-JSON or non-2xx body, fall back to direct Supabase
+    let result: any;
+    try {
+      result = await response.json();
+    } catch {
+      return this._registerDirectSupabase(
+        trimmedEmail,
+        params.password,
+        params.fullName,
+        cleanRollNumber,
+        params.phone || '',
+        params.department,
+        params.yearOfStudy,
+        params.institutionId || DEFAULT_INSTITUTION.id
+      );
+    }
+
+    if (!response.ok) {
+      throw new Error(result?.error || `Registration failed (${response.status})`);
+    }
+
+    const userId = result.userId;
+
+    const newProfile: Profile = {
+      id: userId,
+      email: trimmedEmail,
+      fullName: params.fullName,
+      phone: params.phone,
+      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+      institutionId: params.institutionId || DEFAULT_INSTITUTION.id,
+      institutionName: DEFAULT_INSTITUTION.name,
+      department: params.department,
+      yearOfStudy: params.yearOfStudy,
+      rollNumber: cleanRollNumber,
+      role: 'user',
+      isVerified: false,
+      isSuspended: false,
+      verificationStatus: 'PENDING',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    return {
+      success: true,
+      message: 'Registration Submitted! Pending Campus Admin Approval.',
+      profile: newProfile,
+    };
+  }
+
+  // Fallback: used locally (without Vercel CLI) or when /api/register is unavailable.
+  // In production this path is never reached because /api/register handles it.
+  private async _registerDirectSupabase(
+    email: string,
+    password: string,
+    fullName: string,
+    rollNumber: string,
+    phone: string,
+    department: string,
+    yearOfStudy: number,
+    institutionId: string
+  ): Promise<{ success: boolean; message: string; profile: Profile }> {
+    if (!supabase) throw new Error('Supabase not configured.');
+
+    const { data: authData, error: authErr } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          roll_number: rollNumber,
+          phone,
+          department,
+          year_of_study: yearOfStudy,
+          institution_id: institutionId,
+        },
+      },
+    });
+
+    if (authErr) {
+      const msg = authErr.message.toLowerCase();
+      if (msg.includes('rate limit') || msg.includes('email rate')) {
+        throw new Error('Registration temporarily unavailable (email rate limit). Please try again in a few minutes.');
+      }
+      if (
+        msg.includes('already registered') ||
+        msg.includes('database error') ||
+        msg.includes('duplicate')
+      ) {
+        throw new Error('This email or roll number is already registered. Please sign in instead.');
+      }
+      throw new Error(authErr.message);
+    }
+
+    if (!authData?.user) throw new Error('Registration failed: no user returned.');
+    if (authData.user.identities?.length === 0) {
+      throw new Error('This email address is already registered. Please sign in instead.');
+    }
+
+    return {
+      success: true,
+      message: 'Registration Submitted! Pending Campus Admin Approval.',
+      profile: {
+        id: authData.user.id,
+        email,
+        fullName,
+        phone,
+        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        institutionId,
+        institutionName: DEFAULT_INSTITUTION.name,
+        department,
+        yearOfStudy,
+        rollNumber,
+        role: 'user',
+        isVerified: false,
+        isSuspended: false,
+        verificationStatus: 'PENDING',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  private async registerLegacy(params: any): Promise<{ success: boolean; message: string; profile: Profile }> {
     return this.request('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(params),
@@ -263,84 +368,81 @@ class ApiService {
   async login(email: string, password?: string): Promise<{ success: boolean; profile: Profile }> {
     const trimmedEmail = email.trim().toLowerCase();
 
-    // 1. Direct Supabase Auth (works seamlessly on real Android APK anywhere)
+    // 1. Direct Supabase Auth
     if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
-          email: trimmedEmail,
-          password: password || '',
-        });
+      const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password: password || '',
+      });
 
-        if (authErr) {
-          const msg = authErr.message.toLowerCase();
-          if (msg.includes('invalid login credentials') || msg.includes('invalid grant')) {
-            throw new Error('Invalid email or password. Please verify your credentials.');
-          }
-          if (msg.includes('email not confirmed')) {
-            throw new Error('Account pending admin approval or email confirmation.');
-          }
-          console.warn('[Supabase Auth] signIn error:', authErr.message);
-        } else if (authData?.user) {
-          // Query user profile from Supabase
-          const { data: sbProfile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', authData.user.id)
-            .maybeSingle();
-
-          if (sbProfile) {
-            if (sbProfile.is_suspended) {
-              throw new Error('Your account has been suspended by campus administration.');
-            }
-            if (
-              sbProfile.role === 'user' &&
-              (!sbProfile.is_verified || sbProfile.verification_status !== 'VERIFIED')
-            ) {
-              if (sbProfile.verification_status === 'REJECTED') {
-                throw new Error(
-                  `Registration Rejected: ${sbProfile.rejection_reason || 'Please contact administration.'}`
-                );
-              }
-              throw new Error(
-                'Account Pending Approval: Your registration is awaiting campus admin approval. You can log in as soon as the admin approves your account.'
-              );
-            }
-
-            const profile: Profile = {
-              id: sbProfile.id,
-              email: sbProfile.email,
-              fullName: sbProfile.full_name || 'Student User',
-              phone: sbProfile.phone || '',
-              avatarUrl:
-                sbProfile.avatar_url ||
-                'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-              institutionId: sbProfile.institution_id || DEFAULT_INSTITUTION.id,
-              institutionName: DEFAULT_INSTITUTION.name,
-              department: sbProfile.department || 'Computer Science & Engineering',
-              yearOfStudy: sbProfile.year_of_study || 1,
-              rollNumber: sbProfile.roll_number || 'UNKNOWN',
-              role: sbProfile.role === 'admin' ? 'admin' : 'user',
-              isVerified: sbProfile.is_verified ?? false,
-              isSuspended: sbProfile.is_suspended ?? false,
-              verificationStatus: (sbProfile.verification_status as any) || 'PENDING',
-              createdAt: sbProfile.created_at || new Date().toISOString(),
-              updatedAt: sbProfile.updated_at || new Date().toISOString(),
-            };
-
-            this.setUserId(profile.id);
-            return { success: true, profile };
-          }
+      if (authErr) {
+        const msg = authErr.message.toLowerCase();
+        if (msg.includes('invalid login credentials') || msg.includes('invalid grant')) {
+          throw new Error('Invalid email or password. Please verify your credentials.');
         }
-      } catch (err: any) {
+        if (msg.includes('email not confirmed')) {
+          throw new Error('Account pending admin approval or email confirmation.');
+        }
+        throw new Error(authErr.message);
+      }
+
+      if (authData?.user) {
+        // Query user profile from Supabase profiles table
+        const { data: sbProfile, error: profErr } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authData.user.id)
+          .maybeSingle();
+
+        if (profErr) {
+          throw new Error('Failed to load user profile: ' + profErr.message);
+        }
+
+        if (!sbProfile) {
+          throw new Error('Profile record not found for this account. Please contact campus admin.');
+        }
+
+        if (sbProfile.is_suspended) {
+          throw new Error('Your account has been suspended by campus administration.');
+        }
+
         if (
-          err.message.includes('Invalid email or password') ||
-          err.message.includes('Account Pending Approval') ||
-          err.message.includes('Registration Rejected') ||
-          err.message.includes('suspended')
+          sbProfile.role === 'user' &&
+          (!sbProfile.is_verified || sbProfile.verification_status !== 'VERIFIED')
         ) {
-          throw err;
+          if (sbProfile.verification_status === 'REJECTED') {
+            throw new Error(
+              `Registration Rejected: ${sbProfile.rejection_reason || 'Please contact administration.'}`
+            );
+          }
+          throw new Error(
+            'Account Pending Approval: Your registration is awaiting campus admin approval. You can log in as soon as the admin approves your account.'
+          );
         }
-        console.warn('[Supabase Auth] Fallback to backend API login:', err.message);
+
+        const profile: Profile = {
+          id: sbProfile.id,
+          email: sbProfile.email,
+          fullName: sbProfile.full_name || 'Student User',
+          phone: sbProfile.phone || '',
+          avatarUrl:
+            sbProfile.avatar_url ||
+            'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+          institutionId: sbProfile.institution_id || DEFAULT_INSTITUTION.id,
+          institutionName: DEFAULT_INSTITUTION.name,
+          department: sbProfile.department || 'Computer Science & Engineering',
+          yearOfStudy: sbProfile.year_of_study || 1,
+          rollNumber: sbProfile.roll_number || 'UNKNOWN',
+          role: sbProfile.role === 'admin' ? 'admin' : 'user',
+          isVerified: sbProfile.is_verified ?? false,
+          isSuspended: sbProfile.is_suspended ?? false,
+          verificationStatus: (sbProfile.verification_status as any) || 'PENDING',
+          createdAt: sbProfile.created_at || new Date().toISOString(),
+          updatedAt: sbProfile.updated_at || new Date().toISOString(),
+        };
+
+        this.setUserId(profile.id);
+        return { success: true, profile };
       }
     }
 
@@ -349,6 +451,20 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify({ email: trimmedEmail, password }),
     });
+  }
+
+  async logout(): Promise<void> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.warn('[Supabase] signOut error:', e);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('campus_bazaar_user_id');
+    }
+    this.currentUserId = '';
   }
 
   async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
@@ -381,13 +497,13 @@ class ApiService {
         const { data: { session } } = await supabase.auth.getSession();
         const currentId = session?.user?.id || this.getUserId();
         if (currentId) {
-          const { data: sbProfile } = await supabase
+          const { data: sbProfile, error } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', currentId)
             .maybeSingle();
 
-          if (sbProfile) {
+          if (sbProfile && !error) {
             const profile: Profile = {
               id: sbProfile.id,
               email: sbProfile.email,
@@ -408,6 +524,7 @@ class ApiService {
               createdAt: sbProfile.created_at || new Date().toISOString(),
               updatedAt: sbProfile.updated_at || new Date().toISOString(),
             };
+            this.setUserId(profile.id);
             return { success: true, profile };
           }
         }
@@ -425,6 +542,43 @@ class ApiService {
     documentUrl: string;
     documentType?: string;
   }): Promise<{ success: boolean; message: string; verification: StudentVerification }> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const userId = session?.user?.id || this.getUserId();
+        if (userId) {
+          await supabase
+            .from('profiles')
+            .update({
+              roll_number: params.rollNumber.toUpperCase(),
+              avatar_url: params.documentUrl,
+              verification_status: 'PENDING',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', userId);
+
+          const verification: StudentVerification = {
+            id: userId,
+            studentId: userId,
+            studentName: 'Student',
+            institutionId: DEFAULT_INSTITUTION.id,
+            institutionName: DEFAULT_INSTITUTION.name,
+            rollNumber: params.rollNumber.toUpperCase(),
+            collegeEmail: session?.user?.email || '',
+            department: 'Engineering',
+            yearOfStudy: 1,
+            documentUrl: params.documentUrl,
+            documentType: params.documentType || 'STUDENT_ID_CARD',
+            status: 'PENDING',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          return { success: true, message: 'Verification submitted', verification };
+        }
+      } catch (e) {
+        console.warn('[Supabase] submitVerification error:', e);
+      }
+    }
     return this.request('/api/verification/submit', {
       method: 'POST',
       body: JSON.stringify(params),
@@ -488,7 +642,6 @@ class ApiService {
     try {
       return await this.request(`/api/products${query}`);
     } catch {
-      // Return empty array gracefully if backend is offline on mobile
       return { success: true, count: 0, products: [] };
     }
   }
@@ -561,7 +714,7 @@ class ApiService {
     });
   }
 
-  // --- ORDERS & YOUPI-PG PAYMENTS ---
+  // --- ORDERS & PAYMENTS ---
   async createPaymentOrder(params: {
     productId: string;
     handoverLocation: string;
@@ -589,7 +742,6 @@ class ApiService {
     });
   }
 
-  // --- RAZORPAY TEST MODE PAYMENTS ---
   async createRazorpayOrder(params: RazorpayCreateOrderRequest): Promise<RazorpayCreateOrderResponse> {
     return this.request('/api/razorpay/create-order', {
       method: 'POST',
@@ -604,7 +756,10 @@ class ApiService {
     });
   }
 
-  // --- SELLER CONTACT PRIVACY & ESCROW ---
+  async getSellerContact(orderId: string): Promise<{ success: boolean; contact: SellerContactDetails }> {
+    return this.request(`/api/orders/${orderId}/seller-contact`);
+  }
+
   async getSellerContactDetails(orderId: string): Promise<{ success: boolean; sellerContact: SellerContactDetails }> {
     return this.request(`/api/orders/${orderId}/seller-contact`);
   }
@@ -623,6 +778,35 @@ class ApiService {
     return this.request(`/api/orders/${orderId}/dispute`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
+    });
+  }
+
+  async updateOrderStatus(orderId: string, newStatus: string): Promise<{ success: boolean; order: Order }> {
+    return this.request(`/api/orders/${orderId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: newStatus }),
+    });
+  }
+
+  async reportRentalPayment(
+    orderId: string,
+    data: { paymentMethod: string; referenceId: string; notes?: string }
+  ): Promise<{ success: boolean; message: string }> {
+    return this.request(`/api/orders/${orderId}/rental-payment`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async requestOrderCompletion(orderId: string): Promise<{ success: boolean; message: string }> {
+    return this.request(`/api/orders/${orderId}/request-completion`, {
+      method: 'POST',
+    });
+  }
+
+  async confirmOrderCompletion(orderId: string): Promise<{ success: boolean; message: string }> {
+    return this.request(`/api/orders/${orderId}/confirm-completion`, {
+      method: 'POST',
     });
   }
 
@@ -658,10 +842,18 @@ class ApiService {
     return this.request(`/api/conversations/${id}`);
   }
 
-  async startConversation(productId: string): Promise<{ success: boolean; conversation: Conversation }> {
+  async getMessages(conversationId: string): Promise<{
+    success: boolean;
+    conversation: Conversation;
+    messages: Message[];
+  }> {
+    return this.getConversation(conversationId);
+  }
+
+  async startConversation(productId: string, initialMessage?: string): Promise<{ success: boolean; conversation: Conversation }> {
     return this.request('/api/conversations/start', {
       method: 'POST',
-      body: JSON.stringify({ productId }),
+      body: JSON.stringify({ productId, initialMessage }),
     });
   }
 
@@ -692,33 +884,201 @@ class ApiService {
 
   // --- ADMIN ---
   async getAdminMetrics(): Promise<{ success: boolean; metrics: AdminMetrics }> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: profiles, error } = await supabase.from('profiles').select('role, is_verified, verification_status');
+        if (!error && profiles) {
+          const totalStudents = profiles.filter((p: any) => p.role === 'user').length;
+          const pendingVerifications = profiles.filter(
+            (p: any) => p.role === 'user' && p.verification_status === 'PENDING'
+          ).length;
+          const verifiedStudents = profiles.filter((p: any) => p.role === 'user' && p.is_verified).length;
+          const rejectedVerifications = profiles.filter(
+            (p: any) => p.role === 'user' && p.verification_status === 'REJECTED'
+          ).length;
+          return {
+            success: true,
+            metrics: {
+              totalStudents,
+              verifiedStudents,
+              pendingVerifications,
+              rejectedVerifications,
+              totalListings: 0,
+              activeListings: 0,
+              soldListings: 0,
+              totalOrders: 0,
+              totalGmv: 0,
+              totalCommission: 0,
+              activeSellersCount: 0,
+            },
+          };
+        }
+      } catch (e) {
+        console.warn('[Supabase] getAdminMetrics error:', e);
+      }
+    }
     return this.request('/api/admin/metrics');
   }
 
   async getAdminVerifications(status?: string): Promise<{ success: boolean; verifications: StudentVerification[] }> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        let query = supabase
+          .from('profiles')
+          .select('*')
+          .eq('role', 'user')
+          .order('created_at', { ascending: false });
+
+        if (status && status !== 'all') {
+          query = query.eq('verification_status', status);
+        }
+
+        const { data, error } = await query;
+        if (!error && data) {
+          const verifications: StudentVerification[] = data.map((p: any) => ({
+            id: p.id,
+            studentId: p.id,
+            studentName: p.full_name || 'Student',
+            institutionId: p.institution_id || DEFAULT_INSTITUTION.id,
+            institutionName: DEFAULT_INSTITUTION.name,
+            rollNumber: p.roll_number || 'UNKNOWN',
+            collegeEmail: p.email,
+            department: p.department || 'Engineering',
+            yearOfStudy: p.year_of_study || 1,
+            documentUrl: p.avatar_url || 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=600',
+            documentType: 'STUDENT_ID_CARD',
+            status: (p.verification_status as any) || (p.is_verified ? 'VERIFIED' : 'PENDING'),
+            rejectionReason: p.rejection_reason,
+            createdAt: p.created_at || new Date().toISOString(),
+            updatedAt: p.updated_at || new Date().toISOString(),
+          }));
+          return { success: true, verifications };
+        }
+      } catch (e) {
+        console.warn('[Supabase] getAdminVerifications error:', e);
+      }
+    }
     const q = status ? `?status=${status}` : '';
     return this.request(`/api/admin/verifications${q}`);
   }
 
   async approveVerification(id: string): Promise<{ success: boolean; message: string }> {
+    if (isSupabaseConfigured() && supabase) {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          is_verified: true,
+          verification_status: 'VERIFIED',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+      return { success: true, message: 'Student verification approved successfully.' };
+    }
     return this.request(`/api/admin/verifications/${id}/approve`, {
       method: 'POST',
     });
   }
 
   async rejectVerification(id: string, reason: string): Promise<{ success: boolean; message: string }> {
+    if (isSupabaseConfigured() && supabase) {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          is_verified: false,
+          verification_status: 'REJECTED',
+          rejection_reason: reason,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+      return { success: true, message: 'Student verification rejected.' };
+    }
     return this.request(`/api/admin/verifications/${id}/reject`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
   }
 
+  async reviewBookingAdmin(
+    orderId: string,
+    action: 'APPROVE' | 'REJECT',
+    rejectionReason?: string
+  ): Promise<{ success: boolean; message: string }> {
+    return this.request(`/api/admin/orders/${orderId}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ action, rejectionReason }),
+    });
+  }
+
   async getAdminUsers(query?: string): Promise<{ success: boolean; users: Profile[] }> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        let q = supabase
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (query?.trim()) {
+          const clean = query.trim();
+          q = q.or(`full_name.ilike.%${clean}%,roll_number.ilike.%${clean}%,email.ilike.%${clean}%`);
+        }
+
+        const { data, error } = await q;
+        if (!error && data) {
+          const users: Profile[] = data.map((sbProfile: any) => ({
+            id: sbProfile.id,
+            email: sbProfile.email,
+            fullName: sbProfile.full_name || 'Student User',
+            phone: sbProfile.phone || '',
+            avatarUrl:
+              sbProfile.avatar_url ||
+              'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+            institutionId: sbProfile.institution_id || DEFAULT_INSTITUTION.id,
+            institutionName: DEFAULT_INSTITUTION.name,
+            department: sbProfile.department || 'Computer Science & Engineering',
+            yearOfStudy: sbProfile.year_of_study || 1,
+            rollNumber: sbProfile.roll_number || 'UNKNOWN',
+            role: sbProfile.role === 'admin' ? 'admin' : 'user',
+            isVerified: sbProfile.is_verified ?? false,
+            isSuspended: sbProfile.is_suspended ?? false,
+            verificationStatus: (sbProfile.verification_status as any) || 'PENDING',
+            createdAt: sbProfile.created_at || new Date().toISOString(),
+            updatedAt: sbProfile.updated_at || new Date().toISOString(),
+          }));
+          return { success: true, users };
+        }
+      } catch (e) {
+        console.warn('[Supabase] getAdminUsers error:', e);
+      }
+    }
     const q = query ? `?query=${encodeURIComponent(query)}` : '';
     return this.request(`/api/admin/users${q}`);
   }
 
   async toggleSuspendUser(id: string): Promise<{ success: boolean; message: string; isSuspended: boolean }> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: curr } = await supabase.from('profiles').select('is_suspended').eq('id', id).single();
+        const nextState = !curr?.is_suspended;
+        const { error } = await supabase
+          .from('profiles')
+          .update({ is_suspended: nextState, updated_at: new Date().toISOString() })
+          .eq('id', id);
+
+        if (!error) {
+          return { success: true, message: nextState ? 'User suspended' : 'User reinstated', isSuspended: nextState };
+        }
+      } catch (e) {
+        console.warn('[Supabase] toggleSuspendUser error:', e);
+      }
+    }
     return this.request(`/api/admin/users/${id}/toggle-suspend`, {
       method: 'POST',
     });

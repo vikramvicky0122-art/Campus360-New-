@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Profile, StudentVerification } from '../types/index.ts';
 import { api } from '../services/api.ts';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient.ts';
 
 export interface DemoUserOption {
   id: string;
@@ -112,6 +113,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     refreshUser();
+
+    if (isSupabaseConfigured() && supabase) {
+      const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          await refreshUser();
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setVerification(null);
+        }
+      });
+
+      return () => {
+        authListener?.subscription?.unsubscribe();
+      };
+    }
   }, []);
 
   const login = async (email: string, password?: string): Promise<boolean> => {
@@ -134,10 +150,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
     setUser(null);
     setVerification(null);
-    localStorage.removeItem('campus_bazaar_user_id');
+    await api.logout();
     setIsLoginScreenOpen(true);
   };
 
@@ -153,12 +169,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }) => {
     try {
       const res = await api.register(data);
-      if (res.success && res.profile) {
-        api.setUserId(res.profile.id);
-        setUser(res.profile);
-        setIsLoginScreenOpen(false);
-        await refreshUser();
-      }
+      // Pending accounts are awaiting approval and must not be set as logged-in user
       return res;
     } catch (err: any) {
       throw err;

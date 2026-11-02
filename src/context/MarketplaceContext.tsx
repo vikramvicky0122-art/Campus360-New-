@@ -207,11 +207,9 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
     init();
   }, [user?.id, refreshProducts]);
 
-  // Sync tab if user changes role to admin
+  // Guard admin tabs: Only redirect if a non-admin tries to access admin_* tabs
   useEffect(() => {
-    if (user?.role === 'admin' && !activeTab.startsWith('admin_')) {
-      setActiveTab('admin_dashboard');
-    } else if (user?.role === 'user' && activeTab.startsWith('admin_')) {
+    if (user && user.role !== 'admin' && activeTab.startsWith('admin_')) {
       setActiveTab('home');
     }
   }, [user?.role, activeTab]);
