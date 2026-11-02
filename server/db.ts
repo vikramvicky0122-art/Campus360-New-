@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import {
+import type {
   Profile,
   Institution,
   StudentVerification,
