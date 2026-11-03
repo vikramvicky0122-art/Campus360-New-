@@ -1,5 +1,5 @@
 {
-  "name": "Campus Bazaar",
+  "name": "Campus360",
   "description": "College-exclusive mobile marketplace for verified students to buy and sell products within their campus community with ID card verification, in-app chat, and YouPI-PG payments.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

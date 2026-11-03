@@ -69,7 +69,7 @@ export const PlatformSettingsScreen: React.FC = () => {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Campus Bazaar Commission (%)
+              Campus360 Commission (%)
             </label>
             <div className="relative">
               <input

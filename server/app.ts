@@ -112,25 +112,25 @@ export function createApp(): express.Express {
     next();
   };
 
-  // Static files in /public (like campus-bazaar.zip)
+  // Static files in /public (like campus360.zip)
   app.use(express.static(path.join(__dirname, '..', 'public'), {
     maxAge: 0,
     setHeaders: (res, filePath) => {
       if (filePath.endsWith('.zip')) {
         res.setHeader('Content-Type', 'application/zip');
-        res.setHeader('Content-Disposition', 'attachment; filename="campus-bazaar.zip"');
+        res.setHeader('Content-Disposition', 'attachment; filename="campus360.zip"');
       } else if (filePath.endsWith('.tar.gz')) {
         res.setHeader('Content-Type', 'application/gzip');
-        res.setHeader('Content-Disposition', 'attachment; filename="campus-bazaar.tar.gz"');
+        res.setHeader('Content-Disposition', 'attachment; filename="campus360.tar.gz"');
       }
     },
   }));
 
   // --- DOWNLOAD ZIP FOR ANTIGRAVITY & EXPORT ---
   app.get('/api/download/project-zip', (req, res) => {
-    const zipPath = path.join(__dirname, '..', 'public', 'campus-bazaar.zip');
+    const zipPath = path.join(__dirname, '..', 'public', 'campus360.zip');
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename="campus-bazaar.zip"');
+    res.setHeader('Content-Disposition', 'attachment; filename="campus360.zip"');
     res.sendFile(zipPath, (err) => {
       if (err) {
         console.error('Error sending project zip:', err);
@@ -142,9 +142,9 @@ export function createApp(): express.Express {
   });
 
   app.get('/api/download/project-tar', (req, res) => {
-    const tarPath = path.join(__dirname, '..', 'public', 'campus-bazaar.tar.gz');
+    const tarPath = path.join(__dirname, '..', 'public', 'campus360.tar.gz');
     res.setHeader('Content-Type', 'application/gzip');
-    res.setHeader('Content-Disposition', 'attachment; filename="campus-bazaar.tar.gz"');
+    res.setHeader('Content-Disposition', 'attachment; filename="campus360.tar.gz"');
     res.sendFile(tarPath, (err) => {
       if (err) {
         console.error('Error sending project tar:', err);
@@ -382,7 +382,7 @@ export function createApp(): express.Express {
           if (profile.isSuspended) {
             return res.status(403).json({
               success: false,
-              message: 'Your account has been suspended by campus administration. Contact support@campusbazaar.edu',
+              message: 'Your account has been suspended by campus administration. Contact support@Campus360.edu',
             });
           }
 
@@ -419,7 +419,7 @@ export function createApp(): express.Express {
     if (profile.isSuspended) {
       return res.status(403).json({
         success: false,
-        message: 'Your account has been suspended by campus administration. Contact support@campusbazaar.edu',
+        message: 'Your account has been suspended by campus administration. Contact support@Campus360.edu',
       });
     }
 
@@ -711,7 +711,7 @@ export function createApp(): express.Express {
     if (!user.isVerified) {
       return res.status(403).json({
         success: false,
-        message: 'Access Restricted: Only verified college students can post listings on Campus Bazaar.',
+        message: 'Access Restricted: Only verified college students can post listings on Campus360.',
       });
     }
 
@@ -871,7 +871,7 @@ export function createApp(): express.Express {
     if (!user.isVerified) {
       return res.status(403).json({
         success: false,
-        message: 'Verification Required: You must be a verified student to purchase items on Campus Bazaar.',
+        message: 'Verification Required: You must be a verified student to purchase items on Campus360.',
       });
     }
 
@@ -1068,7 +1068,7 @@ export function createApp(): express.Express {
       transactionType: 'COMMISSION_FEE',
       amount: order.platformCommission,
       status: 'COMPLETED',
-      description: `Campus Bazaar Platform Fee (${db.settings.commissionPercentage}%): ₹${order.platformCommission}`,
+      description: `Campus360 Platform Fee (${db.settings.commissionPercentage}%): ₹${order.platformCommission}`,
       createdAt: new Date().toISOString(),
     });
 
@@ -2091,7 +2091,7 @@ export function createApp(): express.Express {
         id: `notif-${Date.now()}`,
         userId: student.id,
         title: 'Student ID Verified! 🎓✨',
-        message: 'Congratulations! Your student verification was approved by administration. You can now log in and access Campus Bazaar.',
+        message: 'Congratulations! Your student verification was approved by administration. You can now log in and access Campus360.',
         type: 'VERIFICATION',
         relatedId: verif.id,
         isRead: false,

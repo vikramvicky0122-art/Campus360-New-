@@ -17,8 +17,8 @@ export class YouPiGatewayService {
       merchantId: process.env.YOUPI_PG_MERCHANT_ID || 'campus_bazaar_sandbox_mid',
       secretKey: process.env.YOUPI_PG_SECRET_KEY || 'ypk_sec_sand_9483018237cb',
       apiUrl: process.env.YOUPI_PG_API_URL || 'https://sandbox.youpi-pg.io/v1',
-      vpaAddress: 'campusbazaar@youpi',
-      merchantName: 'Campus Bazaar PG',
+      vpaAddress: 'Campus360@youpi',
+      merchantName: 'Campus360 PG',
     };
   }
 
@@ -144,7 +144,7 @@ export class YouPiGatewayService {
       paymentReferenceId: paymentReferenceId || `UPI_REF_${Date.now()}`,
       verifiedAt: new Date().toISOString(),
       bankAuthCode: `AUTH_${Math.floor(100000 + Math.random() * 900000)}`,
-      payoutNote: 'Held in Campus Bazaar Escrow. Disbursed upon student handover confirmation.',
+      payoutNote: 'Held in Campus360 Escrow. Disbursed upon student handover confirmation.',
     };
   }
 }

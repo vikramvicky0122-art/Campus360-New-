@@ -24,7 +24,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Campus Bazaar full-stack server running on http://0.0.0.0:${PORT}`);
+    console.log(`Campus360 full-stack server running on http://0.0.0.0:${PORT}`);
   });
 }
 

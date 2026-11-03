@@ -123,7 +123,7 @@ export const AddProductModal: React.FC = () => {
               Student Verification Required
             </h4>
             <p className="text-xs text-slate-600 dark:text-slate-300 max-w-xs mx-auto leading-relaxed">
-              To protect our college community against fraud, only students with an approved student ID card can list products on Campus Bazaar.
+              To protect our college community against fraud, only students with an approved student ID card can list products on Campus360.
             </p>
             <button
               onClick={() => {
@@ -246,7 +246,7 @@ export const AddProductModal: React.FC = () => {
                 <div className="flex items-center justify-between text-slate-500 text-[11px]">
                   <span className="flex items-center gap-1">
                     <Percent className="w-3 h-3 text-blue-500" />
-                    Campus Bazaar Platform Fee (5.0%):
+                    Campus360 Platform Fee (5.0%):
                   </span>
                   <span className="tabular-nums">- ₹{platformFee.toFixed(2)}</span>
                 </div>

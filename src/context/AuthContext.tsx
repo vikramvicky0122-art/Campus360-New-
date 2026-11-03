@@ -53,7 +53,7 @@ export const DEMO_USERS: DemoUserOption[] = [
   {
     id: 'user-admin',
     name: 'Campus Administrator',
-    email: 'admin@campusbazaar.edu',
+    email: 'admin@Campus360.edu',
     roll: 'ADMIN-001',
     role: 'admin',
     status: 'VERIFIED',

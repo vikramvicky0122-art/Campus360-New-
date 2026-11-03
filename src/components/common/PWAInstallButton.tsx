@@ -59,7 +59,7 @@ export const PWAInstallButton: React.FC = () => {
         <button
           onClick={handleInstall}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-transform active:scale-95"
-          title="Install Campus Bazaar App on Android"
+          title="Install Campus360 App on Android"
         >
           <Download className="w-3.5 h-3.5" />
           <span>Install Android App</span>
@@ -96,7 +96,7 @@ export const PWAInstallButton: React.FC = () => {
                 2. Select <strong>Add to Home Screen</strong> from the action sheet.
               </p>
               <p>
-                3. Campus Bazaar will launch as a standalone, full-screen mobile app with offline capability.
+                3. Campus360 will launch as a standalone, full-screen mobile app with offline capability.
               </p>
             </div>
             <button

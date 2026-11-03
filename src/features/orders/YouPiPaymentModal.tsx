@@ -317,8 +317,8 @@ export const YouPiPaymentModal: React.FC = () => {
               </div>
 
               <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300 space-y-1">
-                <div>Merchant: <strong>Campus Bazaar PG</strong></div>
-                <div>VPA: <strong>campusbazaar@youpi</strong></div>
+                <div>Merchant: <strong>Campus360 PG</strong></div>
+                <div>VPA: <strong>Campus360@youpi</strong></div>
                 <div>Gateway Ref: <strong>{youPiOrder.gatewayOrderId}</strong></div>
               </div>
             </div>
@@ -381,7 +381,7 @@ export const YouPiPaymentModal: React.FC = () => {
 
           <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-500">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>256-Bit Encrypted UPI Flow · Campus Bazaar Escrow Protected</span>
+            <span>256-Bit Encrypted UPI Flow · Campus360 Escrow Protected</span>
           </div>
         </div>
       </div>

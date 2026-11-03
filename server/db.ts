@@ -22,7 +22,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // In-memory Database Store simulating Supabase PostgreSQL Engine
-class CampusBazaarDatabase {
+class Campus360Database {
   public institutions: Institution[] = [];
   public profiles: Profile[] = [];
   public studentVerifications: StudentVerification[] = [];
@@ -41,7 +41,7 @@ class CampusBazaarDatabase {
     commissionPercentage: 10.0,
     allowedDomains: ['esec.ac.in', 'ait.edu', 'nce.ac.in', 'campus.edu', 'edu', 'ac.in'],
     maintenanceMode: false,
-    supportEmail: 'admin@campusbazaar.edu',
+    supportEmail: 'admin@Campus360.edu',
     currency: 'INR',
     updatedBy: 'Campus Admin',
     updatedAt: new Date().toISOString(),
@@ -210,7 +210,7 @@ class CampusBazaarDatabase {
     this.profiles = [
       {
         id: 'user-admin',
-        email: 'admin@campusbazaar.edu',
+        email: 'admin@Campus360.edu',
         fullName: 'Campus Administrator',
         phone: '+91 98765 43210',
         avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
@@ -612,7 +612,7 @@ class CampusBazaarDatabase {
         transactionType: 'COMMISSION_FEE',
         amount: 42.5,
         status: 'COMPLETED',
-        description: 'Campus Bazaar 5.0% platform fee on Order #CB-20250228-001',
+        description: 'Campus360 5.0% platform fee on Order #CB-20250228-001',
         createdAt: '2025-02-28T10:35:00Z',
       },
       {
@@ -760,4 +760,4 @@ class CampusBazaarDatabase {
   }
 }
 
-export const db = new CampusBazaarDatabase();
+export const db = new Campus360Database();

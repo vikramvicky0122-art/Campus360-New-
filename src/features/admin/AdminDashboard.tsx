@@ -45,7 +45,7 @@ export const AdminDashboard: React.FC = () => {
           Admin Dashboard
         </h2>
         <p className="text-xs text-slate-500">
-          Campus Bazaar Operations, Student Verification & Financial Control
+          Campus360 Operations, Student Verification & Financial Control
         </p>
       </div>
 

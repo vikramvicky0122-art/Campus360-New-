@@ -41,7 +41,7 @@ export const ProfileScreen: React.FC = () => {
         <h2 className="text-base font-bold text-slate-900 dark:text-white">
           Student Profile
         </h2>
-        <p className="text-xs text-slate-500">Verified Campus Bazaar Identity</p>
+        <p className="text-xs text-slate-500">Verified Campus360 Identity</p>
       </div>
 
       {/* Digital Student Identity Card (Card Motif) */}

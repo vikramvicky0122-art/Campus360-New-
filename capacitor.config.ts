@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.campusbazaar.app',
+  appId: 'com.Campus360.app',
   appName: 'Campus 360',
   webDir: 'dist',
   server: {

@@ -12,8 +12,8 @@ export const ExpoSourceViewerModal: React.FC = () => {
   const fileContents = {
     'app.json': `{
   "expo": {
-    "name": "Campus Bazaar",
-    "slug": "campus-bazaar",
+    "name": "Campus360",
+    "slug": "campus360",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
@@ -24,10 +24,10 @@ export const ExpoSourceViewerModal: React.FC = () => {
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.campusbazaar.app"
+      "bundleIdentifier": "com.Campus360.app"
     },
     "android": {
-      "package": "com.campusbazaar.app",
+      "package": "com.Campus360.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1e293b"
@@ -39,11 +39,11 @@ export const ExpoSourceViewerModal: React.FC = () => {
       ]
     },
     "plugins": ["expo-router"],
-    "scheme": "campusbazaar"
+    "scheme": "Campus360"
   }
 }`,
     'package.json': `{
-  "name": "campus-bazaar-mobile",
+  "name": "campus360-mobile",
   "version": "1.0.0",
   "main": "expo-router/entry",
   "scripts": {
@@ -73,7 +73,7 @@ export default function HomeScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Campus Bazaar</Text>
+        <Text style={styles.title}>Campus360</Text>
         <Text style={styles.subtitle}>Verified College Marketplace</Text>
       </View>
       {/* Product List with Native Android Touch Gestures */}

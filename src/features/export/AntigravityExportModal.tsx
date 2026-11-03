@@ -48,7 +48,7 @@ export const AntigravityExportModal: React.FC<AntigravityExportModalProps> = ({
       setStatusMessage(format === 'zip' ? 'Packaging valid ZIP (138 KB)...' : 'Packaging TAR.GZ (103 KB)...');
 
       const endpoint = format === 'zip' ? '/api/download/project-zip' : '/api/download/project-tar';
-      const filename = format === 'zip' ? 'campus-bazaar.zip' : 'campus-bazaar.tar.gz';
+      const filename = format === 'zip' ? 'campus360.zip' : 'campus360.tar.gz';
 
       const response = await fetch(endpoint, {
         headers: {
@@ -93,13 +93,13 @@ export const AntigravityExportModal: React.FC<AntigravityExportModalProps> = ({
   const steps = [
     {
       title: '1. Extract the ZIP',
-      desc: 'Extract campus-bazaar.zip. (If Windows built-in unzipper gives an error, use 7-Zip, WinRAR, or the terminal command below).',
-      command: 'unzip campus-bazaar.zip -d campus-bazaar\ncd campus-bazaar',
+      desc: 'Extract campus360.zip. (If Windows built-in unzipper gives an error, use 7-Zip, WinRAR, or the terminal command below).',
+      command: 'unzip campus360.zip -d campus360\ncd campus360',
     },
     {
       title: '2. Open in Antigravity',
-      desc: 'Launch Antigravity, click "Open Workspace" (or File -> Open Folder), and select the campus-bazaar folder.',
-      command: '# In Antigravity: Open Workspace -> campus-bazaar',
+      desc: 'Launch Antigravity, click "Open Workspace" (or File -> Open Folder), and select the campus360 folder.',
+      command: '# In Antigravity: Open Workspace -> campus360',
     },
     {
       title: '3. Install Dependencies & Run',
@@ -160,7 +160,7 @@ export const AntigravityExportModal: React.FC<AntigravityExportModalProps> = ({
               <div>
                 <div className="font-bold text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
                   <FileCode2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>campus-bazaar.zip (138 KB Verified)</span>
+                  <span>campus360.zip (138 KB Verified)</span>
                 </div>
                 <p className="text-xs text-emerald-800/90 dark:text-emerald-300/80 mt-0.5">
                   Full React 19 app + Express backend + Expo Android + Supabase schema
