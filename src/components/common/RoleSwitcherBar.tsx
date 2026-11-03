@@ -33,7 +33,7 @@ export const RoleSwitcherBar: React.FC<RoleSwitcherBarProps> = ({ onOpenRegister
       <div className="flex items-center gap-2">
         <span className="font-bold tracking-tight text-white flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-emerald-400">Campus</span> Bazaar
+          <span className="text-emerald-400">Campus</span>360
         </span>
         <span className="text-slate-600">|</span>
 

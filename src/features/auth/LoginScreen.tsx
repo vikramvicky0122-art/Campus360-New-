@@ -69,7 +69,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <span>Erode Sengunthar Engineering College</span>
           </div>
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-            Campus <span className="text-emerald-600 dark:text-emerald-400">Bazaar</span>
+            Campus<span className="text-emerald-600 dark:text-emerald-400">360</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
             College-exclusive marketplace for textbooks, electronics, and campus essentials

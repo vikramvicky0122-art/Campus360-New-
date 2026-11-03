@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useMarketplace } from '../../context/MarketplaceContext.tsx';
 import { api } from '../../services/api.ts';
+import { supabase, isSupabaseConfigured } from '../../services/supabaseClient.ts';
 import {
   X,
   Upload,
@@ -11,6 +12,8 @@ import {
   AlertCircle,
   Loader2,
   Percent,
+  ImagePlus,
+  Trash2,
 } from 'lucide-react';
 
 export const AddProductModal: React.FC = () => {
@@ -30,12 +33,12 @@ export const AddProductModal: React.FC = () => {
   const [originalPrice, setOriginalPrice] = useState('');
   const [condition, setCondition] = useState('Like New');
   const [department, setDepartment] = useState(user?.department || 'Computer Science');
-  const [images, setImages] = useState<string[]>([
-    'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600',
-  ]);
+  const [images, setImages] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isAddProductOpen) return null;
 
@@ -44,14 +47,83 @@ export const AddProductModal: React.FC = () => {
   const platformFee = Number(((numPrice * commissionPercent) / 100).toFixed(2));
   const sellerReceives = Number((numPrice - platformFee).toFixed(2));
 
-  const sampleImages = [
-    { name: 'Textbook / Notes', url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600' },
-    { name: 'Calculator / Gadget', url: 'https://images.unsplash.com/photo-1594980596870-8aa52a78d8cd?w=600' },
-    { name: 'Hostel Kettle', url: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=600' },
-    { name: 'Study Desk', url: 'https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?w=600' },
-    { name: 'Sports Racket', url: 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=600' },
-    { name: 'Engineering Drafter', url: 'https://images.unsplash.com/photo-1581291518655-9523c932dedb?w=600' },
-  ];
+  const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600';
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+    setError('');
+
+    try {
+      const newImages: string[] = [];
+      for (let i = 0; i < Math.min(files.length, 4 - images.length); i++) {
+        const file = files[i];
+        if (file.size > 5 * 1024 * 1024) {
+          setError('Each image must be under 5MB');
+          continue;
+        }
+
+        if (isSupabaseConfigured() && supabase) {
+          const ext = file.name.split('.').pop() || 'jpg';
+          const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+          const filePath = `products/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('product-images')
+            .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+          if (uploadError) {
+            // If bucket doesn't exist, try marketplace-data bucket
+            const { error: fallbackError } = await supabase.storage
+              .from('marketplace-data')
+              .upload(`images/${fileName}`, file, { cacheControl: '3600', upsert: false });
+
+            if (fallbackError) {
+              console.error('Upload error:', fallbackError);
+              // Fallback to base64 data URL
+              const dataUrl = await fileToDataUrl(file);
+              newImages.push(dataUrl);
+            } else {
+              const { data: urlData } = supabase.storage
+                .from('marketplace-data')
+                .getPublicUrl(`images/${fileName}`);
+              newImages.push(urlData.publicUrl);
+            }
+          } else {
+            const { data: urlData } = supabase.storage
+              .from('product-images')
+              .getPublicUrl(filePath);
+            newImages.push(urlData.publicUrl);
+          }
+        } else {
+          // No Supabase — fallback to data URL
+          const dataUrl = await fileToDataUrl(file);
+          newImages.push(dataUrl);
+        }
+      }
+      setImages((prev) => [...prev, ...newImages].slice(0, 4));
+    } catch (err: any) {
+      setError(err.message || 'Failed to upload image');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const fileToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeImage = (idx: number) => {
+    setImages((prev) => prev.filter((_, i) => i !== idx));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,7 +150,7 @@ export const AddProductModal: React.FC = () => {
         originalPrice: originalPrice ? Number(originalPrice) : undefined,
         condition,
         department,
-        images,
+        images: images.length > 0 ? images : [FALLBACK_IMAGE],
       });
 
       if (res.success) {
@@ -271,37 +343,59 @@ export const AddProductModal: React.FC = () => {
               />
             </div>
 
-            {/* Images Selection */}
+            {/* Image Upload */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Product Image
+                Product Photos (up to 4)
               </label>
-              <div className="flex gap-2 items-center mb-2">
-                <img
-                  src={images[0]}
-                  alt="Preview"
-                  className="w-14 h-14 rounded-xl object-cover border border-slate-200 dark:border-slate-700"
-                />
-                <div className="text-[11px] text-slate-500">
-                  Select an authentic college asset image or click below:
-                </div>
-              </div>
-              <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                {sampleImages.map((s, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setImages([s.url])}
-                    className={`px-2 py-1 rounded-lg text-[10px] whitespace-nowrap border transition ${
-                      images[0] === s.url
-                        ? 'bg-emerald-600 text-white border-emerald-600'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                    }`}
-                  >
-                    {s.name}
-                  </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleImageUpload}
+                className="hidden"
+              />
+              <div className="grid grid-cols-4 gap-2 mb-2">
+                {images.map((img, idx) => (
+                  <div key={idx} className="relative group">
+                    <img
+                      src={img}
+                      alt={`Product ${idx + 1}`}
+                      className="w-full aspect-square rounded-xl object-cover border border-slate-200 dark:border-slate-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(idx)}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 ))}
+                {images.length < 4 && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="w-full aspect-square rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-emerald-500 hover:border-emerald-400 transition"
+                  >
+                    {isUploading ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <>
+                        <ImagePlus className="w-5 h-5" />
+                        <span className="text-[9px]">Add Photo</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
+              {images.length === 0 && (
+                <p className="text-[10px] text-slate-400">
+                  No photos added — a default placeholder will be used
+                </p>
+              )}
             </div>
 
             <div className="pt-2">
