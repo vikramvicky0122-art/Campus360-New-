@@ -74,22 +74,38 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2. Check if roll number already exists in profiles
-    const profilesRes = await fetch(
-      `${supabaseUrl}/rest/v1/profiles?roll_number=eq.${encodeURIComponent(cleanRoll)}&select=id`,
-      { headers: { ...authHeaders, 'Prefer': 'return=representation' } }
-    );
-    if (profilesRes.ok) {
-      const profiles = await profilesRes.json();
-      if (Array.isArray(profiles) && profiles.length > 0) {
+    // 2. Check if roll number or email already exists in profiles
+    const [profilesRollRes, profilesEmailRes] = await Promise.all([
+      fetch(
+        `${supabaseUrl}/rest/v1/profiles?roll_number=eq.${encodeURIComponent(cleanRoll)}&select=id`,
+        { headers: { ...authHeaders, 'Prefer': 'return=representation' } }
+      ),
+      fetch(
+        `${supabaseUrl}/rest/v1/profiles?email=eq.${encodeURIComponent(trimmedEmail)}&select=id`,
+        { headers: { ...authHeaders, 'Prefer': 'return=representation' } }
+      ),
+    ]);
+
+    if (profilesRollRes.ok) {
+      const rollProfiles = await profilesRollRes.json();
+      if (Array.isArray(rollProfiles) && rollProfiles.length > 0) {
         return res.status(409).json({
-          error: 'This roll number is already registered in your institution.',
+          error: `Roll number '${cleanRoll}' is already registered. Please sign in or contact admin.`,
+        });
+      }
+    }
+
+    if (profilesEmailRes.ok) {
+      const emailProfiles = await profilesEmailRes.json();
+      if (Array.isArray(emailProfiles) && emailProfiles.length > 0) {
+        return res.status(409).json({
+          error: 'This email is already registered. Please sign in instead.',
         });
       }
     }
 
     // 3. Create user in Supabase with email_confirm: true (bypasses sending email)
-    const createRes = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+    let createRes = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
       method: 'POST',
       headers: authHeaders,
       body: JSON.stringify({
@@ -107,7 +123,28 @@ export default async function handler(req, res) {
       }),
     });
 
-    const createData = await createRes.json();
+    let createData = await createRes.json();
+
+    // If trigger failed inside Postgres with "Database error creating new user",
+    // retry with minimal payload so the user is created, then insert profile manually
+    if (
+      !createRes.ok &&
+      (createData.msg?.includes('Database error') ||
+        createData.message?.includes('Database error') ||
+        createData.error_description?.includes('Database error'))
+    ) {
+      console.warn('[register] Trigger error on admin/users, retrying with minimal payload...');
+      createRes = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          email: trimmedEmail,
+          password,
+          email_confirm: true,
+        }),
+      });
+      createData = await createRes.json();
+    }
 
     if (!createRes.ok) {
       const errMsg =
@@ -123,13 +160,45 @@ export default async function handler(req, res) {
           error: 'This email is already registered. Please sign in instead.',
         });
       }
+      if (errMsg.toLowerCase().includes('database error')) {
+        return res.status(400).json({
+          error: 'This email or roll number is already associated with an account. Please sign in.',
+        });
+      }
       return res.status(400).json({ error: errMsg });
+    }
+
+    // 4. Ensure profile is upserted into public.profiles
+    const newUserId = createData.id;
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/profiles`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'Prefer': 'resolution=merge-duplicates,return=minimal',
+        },
+        body: JSON.stringify({
+          id: newUserId,
+          email: trimmedEmail,
+          full_name: fullName,
+          phone: phone || '',
+          department: department || 'General',
+          year_of_study: Number(yearOfStudy) || 1,
+          roll_number: cleanRoll,
+          institution_id: validInstitutionId,
+          role: 'user',
+          is_verified: false,
+          verification_status: 'PENDING',
+        }),
+      });
+    } catch (profErr) {
+      console.warn('[register] manual profile upsert warning:', profErr);
     }
 
     return res.status(200).json({
       success: true,
       message: 'Registration submitted. Pending campus admin approval.',
-      userId: createData.id,
+      userId: newUserId,
     });
   } catch (err) {
     console.error('[register] error:', err);

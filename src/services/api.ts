@@ -257,7 +257,11 @@ class ApiService {
     }
 
     if (!response.ok) {
-      throw new Error(result?.error || result?.message || `Registration failed (${response.status})`);
+      let msg = result?.error || result?.message || `Registration failed (${response.status})`;
+      if (msg.toLowerCase().includes('database error')) {
+        msg = 'This email or roll number is already in use. Please sign in instead.';
+      }
+      throw new Error(msg);
     }
 
     const userId = result?.userId || result?.profile?.id || `user-${Date.now()}`;

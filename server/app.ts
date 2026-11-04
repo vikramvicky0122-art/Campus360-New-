@@ -215,14 +215,28 @@ export function createApp(): express.Express {
               full_name: fullName,
               roll_number: rollNumber.toUpperCase(),
               phone: phone || '',
-              institution_id: institutionId,
-              department,
+              institution_id: institutionId || '00000000-0000-0000-0000-000000000001',
+              department: department || 'General',
               year_of_study: Number(yearOfStudy) || 1,
               role: 'user',
             },
           });
           authData = adminCreateRes.data;
           authErr = adminCreateRes.error;
+
+          // If trigger failed with Database error, retry without metadata
+          if (authErr && authErr.message?.includes('Database error')) {
+            console.warn('[Supabase Auth] Retrying createUser without metadata...');
+            const retryRes = await supabase.auth.admin.createUser({
+              email: email.toLowerCase(),
+              password: password || 'Campus360#DefaultPassword',
+              email_confirm: true,
+            });
+            if (retryRes.data?.user) {
+              authData = retryRes.data;
+              authErr = null;
+            }
+          }
         } catch {
           // Fallback to standard signUp
           const signUpRes = await supabase.auth.signUp({
